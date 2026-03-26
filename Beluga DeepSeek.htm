@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Beluga & Cornflowers | yes.beluga.us.ci</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: #0a1f2e;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Quicksand', system-ui, -apple-system, 'Inter', sans-serif;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: none;
+        }
+
+        /* UI overlay – music control & poetic text */
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(10, 25, 35, 0.6);
+            backdrop-filter: blur(8px);
+            border-radius: 40px;
+            padding: 8px 18px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            border: 1px solid rgba(255, 245, 210, 0.3);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            font-size: 14px;
+            color: #eef4ff;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+        }
+
+        button {
+            background: #ffdfa5;
+            border: none;
+            border-radius: 30px;
+            padding: 6px 16px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #1e3a4d;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+
+        button:hover {
+            background: #fff0cf;
+            transform: scale(0.98);
+            box-shadow: 0 0 12px rgba(255,235,170,0.5);
+        }
+
+        .caption {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(4px);
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            color: #cdedff;
+            font-weight: 300;
+            font-family: monospace;
+            pointer-events: none;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 600px) {
+            .controls { font-size: 10px; padding: 6px 12px; }
+            button { font-size: 11px; padding: 4px 12px; }
+            .caption { font-size: 9px; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="belugaCanvas"></canvas>
+    
+    <div class="controls">
+        🐋🎵 <button id="musicToggle">▶ Nostalgic Melody</button>
+        <span style="opacity:0.7;">✦ move mouse · beluga eats flowers ✦</span>
+    </div>
+    <div class="caption">
+        yes.beluga.us.ci — ode to the blue
+    </div>
+
+    <script>
+        (function(){
+            // ---------- CANVAS SETUP ----------
+            const canvas = document.getElementById('belugaCanvas');
+            let ctx = canvas.getContext('2d');
+            
+            let width, height;
+            function resizeCanvas() {
+                width = window.innerWidth;
+                height = window.innerHeight;
+                canvas.width = width;
+                canvas.height = height;
+            }
+            window.addEventListener('resize', () => { resizeCanvas(); });
+            resizeCanvas();
+            
+            // ---------- GLOBAL VARIABLES ----------
+            let mouseX = width/2;
+            let mouseY = height/2;
+            let beluga = {
+                x: width/2,
+                y: height/2,
+                angle: 0,
+                size: 85,   // overall scale factor
+                eyeBlink: 0,
+                eatCooldown: 0
+            };
+            
+            let cornflowers = [];
+            const MAX_FLOWERS = 24;
+            let lastSpawn = 0;
+            
+            // Parallax / atmosphere
+            let particles = [];
+            const PARTICLE_COUNT = 180;
+            
+            // film grain and light leak variables
+            let time = 0;
+            
+            // ---------- MOUSE TRACKING ----------
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                let canvasX = (e.clientX - rect.left) * scaleX;
+                let canvasY = (e.clientY - rect.top) * scaleY;
+                canvasX = Math.min(Math.max(canvasX, 30), width - 30);
+                canvasY = Math.min(Math.max(canvasY, 40), height - 40);
+                mouseX = canvasX;
+                mouseY = canvasY;
+            });
+            
+            // touch support for mobile
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                let canvasX = (touch.clientX - rect.left) * (canvas.width/rect.width);
+                let canvasY = (touch.clientY - rect.top) * (canvas.height/rect.height);
+                canvasX = Math.min(Math.max(canvasX, 30), width - 30);
+                canvasY = Math.min(Math.max(canvasY, 40), height - 40);
+                mouseX = canvasX;
+                mouseY = canvasY;
+            });
+            canvas.addEventListener('touchstart', (e) => e.preventDefault());
+            
+            // ---------- BELUGA SMOOTH FOLLOW ----------
+            function updateBeluga() {
+                // smooth lerp movement (organic)
+                beluga.x += (mouseX - beluga.x) * 0.07;
+                beluga.y += (mouseY - beluga.y) * 0.07;
+                
+                // angle toward direction of movement
+                let dx = mouseX - beluga.x;
+                let dy = mouseY - beluga.y;
+                if (Math.hypot(dx, dy) > 0.5) {
+                    beluga.angle = Math.atan2(dy, dx);
+                }
+                
+                // eye blink random
+                if (Math.random() < 0.005) beluga.eyeBlink = 6;
+                if (beluga.eyeBlink > 0) beluga.eyeBlink--;
+                
+                // cooldown for eating animation
+                if (beluga.eatCooldown > 0) beluga.eatCooldown--;
+            }
+            
+            // ---------- CORNFLOWER CLASS ----------
+            class Cornflower {
+                constructor(x, y, size = 22) {
+                    this.x = x;
+                    this.y = y;
+                    this.size = size * (0.7 + Math.random() * 0.7);
+                    this.vx = (Math.random() - 0.5) * 0.35;
+                    this.vy = (Math.random() - 1.2) * 0.4 - 0.3;
+                    this.life = 1.0;
+                    this.opacity = 0.9;
+                    this.petalHue = 260 + Math.random() * 25; // blue to lavender
+                    this.centerHue = 45 + Math.random() * 20;
+                }
+                
+                update() {
+                    this.x += this.vx;
+                    this.y += this.vy;
+                    this.vy += 0.018; // gentle gravity
+                    this.life -= 0.0025;
+                    if (this.y > height + 80) this.life = 0;
+                    if (this.x < -80 || this.x > width + 80) this.life = 0;
+                    return this.life > 0;
+                }
+                
+                draw(ctx) {
+                    ctx.save();
+                    ctx.shadowBlur = 8;
+                    ctx.shadowColor = "rgba(140, 180, 220, 0.5)";
+                    ctx.globalAlpha = this.opacity * Math.min(this.life * 1.2, 1);
+                    ctx.translate(this.x, this.y);
+                    
+                    // petals (simple but aesthetic)
+                    for (let i = 0; i < 8; i++) {
+                        let angle = (i / 8) * Math.PI * 2;
+                        let px = Math.cos(angle) * this.size * 0.65;
+                        let py = Math.sin(angle) * this.size * 0.55;
+                        ctx.beginPath();
+                        ctx.ellipse(px, py, this.size*0.45, this.size*0.32, angle, 0, Math.PI*2);
+                        ctx.fillStyle = `hsla(${this.petalHue}, 70%, 70%, 0.85)`;
+                        ctx.fill();
+                        ctx.strokeStyle = `hsla(${this.petalHue}, 60%, 55%, 0.4)`;
+                        ctx.lineWidth = 0.8;
+                        ctx.stroke();
+                    }
+                    // center
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size*0.32, 0, Math.PI*2);
+                    ctx.fillStyle = `hsla(${this.centerHue}, 85%, 62%, 0.95)`;
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size*0.18, 0, Math.PI*2);
+                    ctx.fillStyle = `hsla(35, 85%, 55%, 0.9)`;
+                    ctx.fill();
+                    
+                    ctx.restore();
+                }
+                
+                // check if beluga eats it (distance)
+                eaten(belugaX, belugaY, mouthRadius = 45) {
+                    const dx = this.x - belugaX;
+                    const dy = this.y - belugaY;
+                    const dist = Math.hypot(dx, dy);
+                    return dist < mouthRadius;
+                }
+            }
+            
+            // spawn cornflowers randomly but mostly near edges or from top
+            function spawnCornflower() {
+                if (cornflowers.length >= MAX_FLOWERS + 5) return;
+                let x = Math.random() * width;
+                let y = -20 - Math.random() * 100;
+                // occasionally from sides
+                if (Math.random() > 0.7) {
+                    x = Math.random() < 0.5 ? -40 : width + 40;
+                    y = Math.random() * (height * 0.7);
+                }
+                cornflowers.push(new Cornflower(x, y, 20 + Math.random() * 9));
+            }
+            
+            // periodic spawn
+            function spawnController() {
+                if (cornflowers.length < MAX_FLOWERS) {
+                    if (Math.random() < 0.12) spawnCornflower();
+                } else {
+                    if (Math.random() < 0.04) spawnCornflower();
+                }
+            }
+            
+            // ---------- DRAW BELUGA (realistic & cute) ----------
+            function drawBeluga() {
+                ctx.save();
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = "rgba(180, 210, 255, 0.6)";
+                ctx.translate(beluga.x, beluga.y);
+                ctx.rotate(beluga.angle);
+                
+                // body (round beluga shape)
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 34, 28, 0, 0, Math.PI * 2);
+                ctx.fillStyle = "#f0f8ff";
+                ctx.fill();
+                ctx.strokeStyle = "#b0d4ff";
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+                
+                // dorsal ridge (soft)
+                ctx.beginPath();
+                ctx.moveTo(-18, -16);
+                ctx.quadraticCurveTo(0, -28, 20, -15);
+                ctx.strokeStyle = "#b5d8ff";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // flippers
+                ctx.beginPath();
+                ctx.moveTo(-32, 8);
+                ctx.quadraticCurveTo(-48, 12, -34, 28);
+                ctx.fillStyle = "#eef6ff";
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(32, 8);
+                ctx.quadraticCurveTo(48, 12, 34, 28);
+                ctx.fill();
+                
+                // eye + blush
+                ctx.fillStyle = "#2c3e44";
+                ctx.beginPath();
+                ctx.arc(16, -8, 5, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "white";
+                ctx.beginPath();
+                ctx.arc(14, -10, 1.8, 0, Math.PI*2);
+                ctx.fill();
+                if (beluga.eyeBlink <= 0) {
+                    ctx.fillStyle = "#0f1a24";
+                    ctx.beginPath();
+                    ctx.arc(15, -8.5, 2.5, 0, Math.PI*2);
+                    ctx.fill();
+                } else {
+                    // blinking: line
+                    ctx.beginPath();
+                    ctx.moveTo(12, -8);
+                    ctx.lineTo(20, -8);
+                    ctx.lineWidth = 2.5;
+                    ctx.strokeStyle = "#0f1a24";
+                    ctx.stroke();
+                }
+                // blush
+                ctx.fillStyle = "rgba(255, 150, 150, 0.5)";
+                ctx.beginPath();
+                ctx.ellipse(24, 2, 4, 2.5, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(8, 2, 4, 2.5, 0, 0, Math.PI*2);
+                ctx.fill();
+                
+                // smile (gentle)
+                ctx.beginPath();
+                ctx.arc(12, 4, 9, 0.1, Math.PI - 0.1);
+                ctx.strokeStyle = "#957dad";
+                ctx.lineWidth = 1.6;
+                ctx.stroke();
+                
+                // eating effect if cooldown active
+                if (beluga.eatCooldown > 0) {
+                    ctx.beginPath();
+                    ctx.arc(22, -4, 9 + (beluga.eatCooldown%3), 0, Math.PI*2);
+                    ctx.fillStyle = "rgba(255, 240, 150, 0.6)";
+                    ctx.fill();
+                }
+                
+                ctx.restore();
+            }
+            
+            // ---------- ATMOSPHERE: PARTICLES & BUBBLES & LIGHT ----------
+            function initParticles() {
+                for (let i=0; i<PARTICLE_COUNT; i++) {
+                    particles.push({
+                        x: Math.random() * width,
+                        y: Math.random() * height,
+                        radius: 1.5 + Math.random() * 6,
+                        alpha: 0.2 + Math.random() * 0.5,
+                        speed: 0.2 + Math.random() * 0.9,
+                        sway: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+            
+            function updateParticles() {
+                for (let p of particles) {
+                    p.y -= p.speed * 0.25;
+                    p.x += Math.sin(time * 0.8 + p.sway) * 0.2;
+                    if (p.y < -20) p.y = height + 20;
+                    if (p.x < -20) p.x = width + 20;
+                    if (p.x > width+20) p.x = -20;
+                }
+            }
+            
+            function drawParticles() {
+                for (let p of particles) {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2);
+                    ctx.fillStyle = `rgba(210, 230, 255, ${p.alpha * 0.5})`;
+                    ctx.fill();
+                }
+            }
+            
+            // light rays / gradient sky
+            function drawBackground() {
+                const grad = ctx.createLinearGradient(0, 0, 0, height);
+                grad.addColorStop(0, "#112f44");
+                grad.addColorStop(0.5, "#1c4e6b");
+                grad.addColorStop(1, "#2a6285");
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, width, height);
+                
+                // underwater caustics (soft)
+                for (let i = 0; i < 8; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(width * (0.1 + Math.sin(time*0.2 + i)*0.05), 0);
+                    ctx.lineTo(width * (0.2 + Math.cos(time*0.3 + i)*0.07), height);
+                    ctx.lineTo(width * (0.05 + Math.sin(time*0.5 + i)*0.1), height);
+                    ctx.fillStyle = `rgba(255, 250, 200, 0.02)`;
+                    ctx.fill();
+                }
+            }
+            
+            // film grain / nostalgic overlay
+            function drawFilmGrain() {
+                ctx.fillStyle = "rgba(0,0,0,0.08)";
+                ctx.fillRect(0,0,width,height);
+                if (Math.random() < 0.3) {
+                    ctx.fillStyle = "rgba(0,0,0,0.02)";
+                    ctx.fillRect(0,0,width,height);
+                }
+                // vignette
+                let grad = ctx.createRadialGradient(width/2, height/2, height*0.4, width/2, height/2, height*0.9);
+                grad.addColorStop(0, "rgba(0,0,0,0)");
+                grad.addColorStop(1, "rgba(10,20,30,0.45)");
+                ctx.fillStyle = grad;
+                ctx.fillRect(0,0,width,height);
+            }
+            
+            // ---------- EATING LOGIC (beluga consumes flowers) ----------
+            function updateCornflowersAndEat() {
+                for (let i = cornflowers.length-1; i >= 0; i--) {
+                    const flower = cornflowers[i];
+                    const alive = flower.update();
+                    if (!alive) {
+                        cornflowers.splice(i,1);
+                        continue;
+                    }
+                    // check collision with beluga's mouth area
+                    let mouthX = beluga.x + Math.cos(beluga.angle) * 28;
+                    let mouthY = beluga.y + Math.sin(beluga.angle) * 22;
+                    if (flower.eaten(mouthX, mouthY, 44)) {
+                        cornflowers.splice(i,1);
+                        beluga.eatCooldown = 12;
+                        // optional tiny particle effect
+                        for(let s=0;s<4;s++) {
+                            particles.push({
+                                x: flower.x,
+                                y: flower.y,
+                                radius: 2+Math.random()*4,
+                                alpha: 0.8,
+                                speed: 0.8+Math.random(),
+                                sway: Math.random()*Math.PI*2,
+                                life: 20
+                            });
+                        }
+                    }
+                }
+                // remove old particles
+                for (let i=particles.length-1; i>=0; i--) {
+                    if (particles[i].life !== undefined) {
+                        particles[i].life--;
+                        if (particles[i].life <= 0) particles.splice(i,1);
+                    }
+                }
+            }
+            
+            // ---------- MUSIC (Web Audio Nostalgic Piano Loop) ----------
+            let audioCtx = null;
+            let musicPlaying = false;
+            let musicInterval = null;
+            let gainNode = null;
+            const musicButton = document.getElementById('musicToggle');
+            
+            async function initAudio() {
+                if (audioCtx) return;
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                gainNode = audioCtx.createGain();
+                gainNode.gain.value = 0.35;
+                gainNode.connect(audioCtx.destination);
+            }
+            
+            // simple nostalgic chord progression (C - Am - F - G) arpeggio style
+            function playNostalgicNote(freq, startTime, duration, volume = 0.3) {
+                if (!audioCtx || !musicPlaying) return;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(volume, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+                osc.connect(gain);
+                gain.connect(gainNode);
+                osc.start(startTime);
+                osc.stop(startTime + duration);
+            }
+            
+            function startMelody() {
+                if (!audioCtx) return;
+                if (musicInterval) clearInterval(musicInterval);
+                const now = audioCtx.currentTime;
+                let beat = 0;
+                const bpm = 72;
+                const barDuration = (60 / bpm) * 4; // 4 beats per bar
+                const notes = [
+                    // Progression Cmaj7 vibes: C4, E4, G4, B4, A4, etc.
+                    { freq: 261.63, duration: 0.6, vol: 0.22 }, // C4
+                    { freq: 329.63, duration: 0.5, vol: 0.2 },  // E4
+                    { freq: 392.00, duration: 0.7, vol: 0.21 },  // G4
+                    { freq: 493.88, duration: 0.4, vol: 0.15 },  // B4
+                    { freq: 440.00, duration: 0.8, vol: 0.18 },  // A4
+                    { freq: 349.23, duration: 0.5, vol: 0.2 },   // F4
+                    { freq: 392.00, duration: 0.7, vol: 0.2 },
+                    { freq: 293.66, duration: 0.9, vol: 0.19 },  // D4
+                    { freq: 261.63, duration: 1.2, vol: 0.25 }
+                ];
+                let noteIndex = 0;
+                musicInterval = setInterval(() => {
+                    if (!musicPlaying || !audioCtx) return;
+                    const currentTime = audioCtx.currentTime;
+                    const note = notes[noteIndex % notes.length];
+                    playNostalgicNote(note.freq, currentTime, note.duration, note.vol);
+                    // also add a soft higher harmony sometimes
+                    if (noteIndex % 2 === 0) {
+                        playNostalgicNote(note.freq * 1.5, currentTime + 0.05, note.duration*0.7, note.vol*0.5);
+                    }
+                    noteIndex++;
+                    if (noteIndex > 30) noteIndex = 0;
+                }, 820); // around 0.8 sec per note - dreamy
+            }
+            
+            function stopMelody() {
+                if (musicInterval) {
+                    clearInterval(musicInterval);
+                    musicInterval = null;
+                }
+            }
+            
+            musicButton.addEventListener('click', async () => {
+                if (!audioCtx) {
+                    await initAudio();
+                }
+                if (musicPlaying) {
+                    musicPlaying = false;
+                    stopMelody();
+                    musicButton.innerHTML = '▶ Nostalgic Melody';
+                    if (audioCtx) gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime+0.3);
+                } else {
+                    await initAudio();
+                    if (audioCtx.state === 'suspended') await audioCtx.resume();
+                    gainNode.gain.linearRampToValueAtTime(0.38, audioCtx.currentTime+0.1);
+                    musicPlaying = true;
+                    startMelody();
+                    musicButton.innerHTML = '⏸ Pause Music';
+                }
+            });
+            
+            // auto-resume audio on any user gesture
+            function enableAudioOnFirstMove() {
+                const handler = async () => {
+                    if (!audioCtx && musicPlaying === false) {
+                        await initAudio();
+                        if (audioCtx && musicPlaying === false) {
+                            // do nothing, just ready
+                        }
+                    }
+                    window.removeEventListener('click', handler);
+                    window.removeEventListener('touchstart', handler);
+                };
+                window.addEventListener('click', handler);
+                window.addEventListener('touchstart', handler);
+            }
+            enableAudioOnFirstMove();
+            
+            // ---------- ANIMATION LOOP ----------
+            let lastTimestamp = 0;
+            function animate(timestamp) {
+                time = timestamp * 0.003;
+                updateBeluga();
+                spawnController();
+                updateCornflowersAndEat();
+                updateParticles();
+                
+                drawBackground();
+                // draw cornflowers
+                for (let f of cornflowers) f.draw(ctx);
+                drawBeluga();
+                drawParticles();
+                drawFilmGrain();
+                
+                // light reflections
+                ctx.fillStyle = `rgba(255, 245, 200, 0.04)`;
+                ctx.fillRect(0,0,width,height);
+                
+                requestAnimationFrame(animate);
+            }
+            
+            // init extras
+            initParticles();
+            for(let i=0;i<12;i++) spawnCornflower(); // starting bouquet
+            requestAnimationFrame(animate);
+        })();
+    </script>
+</body>
+</html>
